@@ -5,10 +5,16 @@ import gardenDirt from '../assets/rugs/garden-dirt.svg';
 import sunset from '../assets/rugs/sunset.svg';
 import sunsetDirt from '../assets/rugs/sunset-dirt.svg';
 
-export const tools={brush:{id:'brush',name:'Brush',radius:34,power:0.9}};
+export const tools={
+  brush:{id:'brush',name:'Soft Brush',radius:34,power:1.0,coverage:.82,precision:1.0,wear:.35,icon:'🧹',description:'Balanced cleaning. Safe and precise.'},
+  scrubber:{id:'scrubber',name:'Deep Scrubber',radius:48,power:1.55,coverage:1.0,precision:.68,wear:1.25,icon:'🧽',description:'Fast and powerful, but easy to overwork.'},
+  detail:{id:'detail',name:'Detail Brush',radius:19,power:.62,coverage:.48,precision:1.35,wear:.12,icon:'🪥',description:'Slow, precise cleaning for a perfect finish.'}
+};
+
+export const toolOrder=['brush','scrubber','detail'];
 
 export const carpets=[
- {id:'classic',name:'Persian Classic',ratio:1.55,shape:'rounded',asset:classic,dirtMask:classicDirt},
- {id:'garden',name:'Garden Runner',ratio:2.25,shape:'rounded',asset:garden,dirtMask:gardenDirt},
- {id:'sunset',name:'Sunset Medallion',ratio:1.18,shape:'oval',asset:sunset,dirtMask:sunsetDirt}
+ {id:'classic',name:'Persian Classic',ratio:1.55,shape:'rounded',asset:classic,dirtMask:classicDirt,idealTool:'detail',difficulty:1},
+ {id:'garden',name:'Garden Runner',ratio:2.25,shape:'rounded',asset:garden,dirtMask:gardenDirt,idealTool:'brush',difficulty:1.15},
+ {id:'sunset',name:'Sunset Medallion',ratio:1.18,shape:'oval',asset:sunset,dirtMask:sunsetDirt,idealTool:'brush',difficulty:1.3}
 ];
