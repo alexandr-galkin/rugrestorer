@@ -13,18 +13,26 @@ export class CleaningController {
     this.progressCanvas.width = 128;
     this.progressCanvas.height = 128;
     this.progressCtx = this.progressCanvas.getContext('2d', {willReadFrequently:true});
-    this.dirtReady = this.loadDirt();
     this.audio = null;
+    this.ready = false;
+    this.lastFrame = performance.now();
     this.resizeHandler = () => this.resize();
     this.resize();
     this.bind();
+    this.animate = this.animate.bind(this);
+    requestAnimationFrame(this.animate);
+    this.loadAssets();
   }
 
-  async loadDirt() {
-    const image = await this.loadImage(this.carpet.dirtMask);
-    this.dirtImage = image;
-    this.dirtCanvas.width = this.w || 1;
-    this.dirtCanvas.height = this.h || 1;
+  async loadAssets() {
+    const [rug, dirt] = await Promise.all([
+      this.loadImage(this.carpet.asset),
+      this.loadImage(this.carpet.dirtMask)
+    ]);
+    this.rugImage = rug;
+    this.dirtImage = dirt;
+    this.dirtyCanvas.width = Math.max(1, Math.round(this.w));
+    this.dirtyCanvas.height = Math.max(1, Math.round(this.h));
     this.drawDirtImage();
     this.initialDirty = this.measureDirty();
     this.dirty = this.initialDirty;
@@ -44,14 +52,24 @@ export class CleaningController {
   resize() {
     const r = this.canvas.getBoundingClientRect();
     const d = Math.min(devicePixelRatio || 1, 2);
-    this.canvas.width = Math.max(1, Math.round(r.width * d));
-    this.canvas.height = Math.max(1, Math.round(r.height * d));
-    this.ctx.setTransform(d, 0, 0, d, 0, 0);
     this.w = r.width;
     this.h = r.height;
-    this.dirtyCanvas.width = Math.max(1, Math.round(this.w));
-    this.dirtyCanvas.height = Math.max(1, Math.round(this.h));
-    if (this.dirtImage) this.drawDirtImage();
+    this.canvas.width = Math.max(1, Math.round(this.w * d));
+    this.canvas.height = Math.max(1, Math.round(this.h * d));
+    this.ctx.setTransform(d, 0, 0, d, 0, 0);
+
+    if (this.dirtyCanvas.width && this.dirtyCanvas.height && this.ready) {
+      const old = document.createElement('canvas');
+      old.width = this.dirtyCanvas.width;
+      old.height = this.dirtyCanvas.height;
+      old.getContext('2d').drawImage(this.dirtyCanvas, 0, 0);
+      this.dirtyCanvas.width = Math.max(1, Math.round(this.w));
+      this.dirtyCanvas.height = Math.max(1, Math.round(this.h));
+      this.dirtyCtx.drawImage(old, 0, 0, old.width, old.height, 0, 0, this.w, this.h);
+    } else {
+      this.dirtyCanvas.width = Math.max(1, Math.round(this.w));
+      this.dirtyCanvas.height = Math.max(1, Math.round(this.h));
+    }
     this.draw();
   }
 
@@ -118,7 +136,6 @@ export class CleaningController {
     this.last = {x, y};
     this.brushSound(Math.min(.07, .025 + distance * .001));
     this.dirty = this.measureDirty();
-    this.draw();
   }
 
   erase(x, y) {
@@ -178,6 +195,14 @@ export class CleaningController {
     c.restore();
   }
 
+  animate(now) {
+    const dt = Math.min(.035, (now - this.lastFrame) / 1000 || .016);
+    this.lastFrame = now;
+    this.updateParticles(dt);
+    this.draw();
+    requestAnimationFrame(this.animate);
+  }
+
   draw() {
     if (!this.w || !this.h) return;
     const c = this.ctx;
@@ -197,10 +222,6 @@ export class CleaningController {
 
     if (this.ready) c.drawImage(this.dirtyCanvas, 0, 0, this.w, this.h);
 
-    const now = performance.now();
-    const dt = Math.min(.035, ((this._lastFrame || now) - now) / -1000 || .016);
-    this._lastFrame = now;
-    this.updateParticles(dt);
     for (const p of this.particles) {
       c.globalAlpha = Math.max(0, p.life / .6);
       c.fillStyle = '#d4b994';
