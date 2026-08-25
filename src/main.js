@@ -1,20 +1,19 @@
 import './style.css';
 import {carpets,tools,toolOrder} from './data/game.js';
 import {CleaningController} from './cleaning/CleaningController.js';
-import brushAsset from './assets/brush.svg';
 
 const app=document.querySelector('#app');
 let index=0,controller,selectedTool='brush';
 
 const menu=()=>{
-  app.innerHTML=`<main class="screen menu workshop"><div class="workshop-glow"></div><div class="brand"><span>RUG</span> RESTORER</div><p>Clean · Restore · Satisfy</p><div class="workshop-card"><div class="card-rug"></div><div class="card-tools"><img src="${brushAsset}" alt="Brush"><span>RESTORATION WORKSHOP</span></div></div><button id="start">START JOB</button><small>v0.0.0.3</small></main>`;
+  app.innerHTML=`<main class="screen menu workshop"><div class="workshop-glow"></div><div class="brand"><span>RUG</span> RESTORER</div><p>Clean · Restore · Satisfy</p><div class="workshop-card"><div class="card-rug"></div><div class="card-tools"><img src="${tools.brush.asset}" alt="Brush"><span>RESTORATION WORKSHOP</span></div></div><button id="start">START JOB</button><small>v0.0.0.3</small></main>`;
   document.querySelector('#start').onclick=()=>start();
 };
 
 function start(){
   const carpet=carpets[index];
   const tool=tools[selectedTool];
-  app.innerHTML=`<main class="screen game"><header><div><b>RUG #${String(index+1).padStart(3,'0')}</b><span>${carpet.name}</span></div><div class="score"><strong id="quality">100</strong><small>QUALITY</small></div><strong id="progress">0%</strong></header><section class="work"><div class="hint" id="hint">Choose a tool, then brush carefully</div><canvas id="rug"></canvas><div class="brush"><img src="${brushAsset}" alt=""><span id="tool-label">${tool.name.toUpperCase()}</span></div><div class="toolbelt" id="toolbelt">${toolOrder.map(id=>{const t=tools[id];return `<button class="tool ${id===selectedTool?'active':''}" data-tool="${id}" title="${t.description}"><b>${t.icon}</b><span>${t.name}</span></button>`}).join('')}</div></section><div class="bar"><i id="bar"></i></div><div class="metrics"><span id="grade">ROUGH CLEAN</span><span id="strokes">STROKES 0</span><span id="distance">DISTANCE 0</span></div></main>`;
+  app.innerHTML=`<main class="screen game"><header><div><b>RUG #${String(index+1).padStart(3,'0')}</b><span>${carpet.name}</span></div><div class="score"><strong id="quality">100</strong><small>QUALITY</small></div><strong id="progress">0%</strong></header><section class="work"><div class="hint" id="hint">Choose a tool, then brush carefully</div><canvas id="rug"></canvas><div class="brush"><img id="tool-image" src="${tool.asset}" alt=""><span id="tool-label">${tool.name.toUpperCase()}</span></div><div class="toolbelt" id="toolbelt">${toolOrder.map(id=>{const t=tools[id];return `<button class="tool ${id===selectedTool?'active':''}" data-tool="${id}" title="${t.description}"><img src="${t.asset}" alt=""><span>${t.name}</span></button>`}).join('')}</div></section><div class="bar"><i id="bar"></i></div><div class="metrics"><span id="grade">ROUGH CLEAN</span><span id="strokes">STROKES 0</span><span id="distance">DISTANCE 0</span></div></main>`;
 
   const qualityEl=document.querySelector('#quality');
   const progressEl=document.querySelector('#progress');
@@ -22,6 +21,7 @@ function start(){
   const strokesEl=document.querySelector('#strokes');
   const distanceEl=document.querySelector('#distance');
   const bar=document.querySelector('#bar');
+  const toolImage=document.querySelector('#tool-image');
 
   const update=state=>{
     progressEl.textContent=state.progress+'%';
@@ -31,6 +31,7 @@ function start(){
     distanceEl.textContent='DISTANCE '+Math.round(state.stats.distance);
     bar.style.width=state.progress+'%';
     document.querySelector('#tool-label').textContent=state.tool.name.toUpperCase();
+    toolImage.src=state.tool.asset;
   };
 
   controller=new CleaningController(document.querySelector('#rug'),carpet,tool,update);
