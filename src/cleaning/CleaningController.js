@@ -1,10 +1,12 @@
 export class CleaningController {
-  constructor(canvas, carpet, tool, onStats = () => {}) {
+  constructor(canvas, carpet, tool, onStats = () => {}, options = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.carpet = carpet;
     this.tool = tool;
     this.onStats = onStats;
+    this.soundEnabled = options.soundEnabled !== false;
+    this.paused = false;
     this.active = false;
     this.last = null;
     this.particles = [];
@@ -27,10 +29,7 @@ export class CleaningController {
   }
 
   async loadAssets() {
-    const [rug, dirt] = await Promise.all([
-      this.loadImage(this.carpet.asset),
-      this.loadImage(this.carpet.dirtMask)
-    ]);
+    const [rug, dirt] = await Promise.all([this.loadImage(this.carpet.asset), this.loadImage(this.carpet.dirtMask)]);
     this.rugImage = rug;
     this.dirtImage = dirt;
     this.dirtyCanvas.width = Math.max(1, Math.round(this.w));
@@ -77,6 +76,7 @@ export class CleaningController {
 
   bind() {
     this.canvas.onpointerdown = e => {
+      if (this.paused) return;
       this.active = true;
       this.canvas.setPointerCapture(e.pointerId);
       this.initAudio();
@@ -84,19 +84,26 @@ export class CleaningController {
       this.stats.toolUses[this.tool.id] = (this.stats.toolUses[this.tool.id] || 0) + 1;
       this.paint(e);
     };
-    this.canvas.onpointermove = e => { if (this.active) this.paint(e); };
+    this.canvas.onpointermove = e => { if (this.active && !this.paused) this.paint(e); };
     this.canvas.onpointerup = () => { this.active = false; this.last = null; };
     this.canvas.onpointercancel = () => { this.active = false; this.last = null; };
     window.addEventListener('resize', this.resizeHandler);
   }
 
-  setTool(tool) {
-    this.tool = tool;
+  setTool(tool) { this.tool = tool; this.last = null; }
+
+  setSoundEnabled(enabled) { this.soundEnabled = Boolean(enabled); }
+
+  setPaused(paused) {
+    this.paused = Boolean(paused);
+    this.active = false;
     this.last = null;
+    if (!this.paused && this.audio?.state === 'suspended') this.audio.resume();
+    this.emitStats();
   }
 
   initAudio() {
-    if (this.audio) return;
+    if (!this.soundEnabled || this.audio) return;
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     this.audio = new AudioCtx();
@@ -104,7 +111,7 @@ export class CleaningController {
   }
 
   brushSound(intensity = 0.05) {
-    if (!this.audio) return;
+    if (!this.soundEnabled || !this.audio) return;
     const now = this.audio.currentTime;
     const osc = this.audio.createOscillator();
     const gain = this.audio.createGain();
@@ -123,7 +130,7 @@ export class CleaningController {
   }
 
   paint(e) {
-    if (!this.ready) return;
+    if (!this.ready || this.paused) return;
     const r = this.canvas.getBoundingClientRect();
     const x = e.clientX - r.left;
     const y = e.clientY - r.top;
@@ -132,7 +139,6 @@ export class CleaningController {
     const rw = this.w * .39;
     const rh = Math.min(this.h * .34, rw / this.carpet.ratio);
     if (Math.abs(dx) > rw || Math.abs(dy) > rh) return;
-
     const distance = this.last ? Math.hypot(x - this.last.x, y - this.last.y) : 0;
     const steps = Math.max(1, Math.ceil(distance / Math.max(6, this.tool.radius * .3)));
     const previous = this.dirty;
@@ -155,12 +161,8 @@ export class CleaningController {
 
   erase(x, y) {
     const c = this.dirtyCtx;
-    c.save();
-    c.globalCompositeOperation = 'destination-out';
-    c.beginPath();
-    c.arc(x, y, this.tool.radius * .78 * this.tool.precision, 0, Math.PI * 2);
-    c.fill();
-    c.restore();
+    c.save(); c.globalCompositeOperation = 'destination-out'; c.beginPath();
+    c.arc(x, y, this.tool.radius * .78 * this.tool.precision, 0, Math.PI * 2); c.fill(); c.restore();
   }
 
   spawnDust(x, y) {
@@ -170,30 +172,20 @@ export class CleaningController {
   }
 
   updateParticles(dt) {
-    for (const p of this.particles) {
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vy += 48 * dt;
-      p.life -= dt;
-    }
+    if (this.paused) return;
+    for (const p of this.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 48 * dt; p.life -= dt; }
     this.particles = this.particles.filter(p => p.life > 0);
   }
 
   measureDirty() {
     if (!this.dirtImage || !this.w || !this.h) return 0;
-    const c = this.progressCtx;
-    c.clearRect(0, 0, 128, 128);
-    c.drawImage(this.dirtyCanvas, 0, 0, 128, 128);
-    const data = c.getImageData(0, 0, 128, 128).data;
-    let alpha = 0;
+    const c = this.progressCtx; c.clearRect(0, 0, 128, 128); c.drawImage(this.dirtyCanvas, 0, 0, 128, 128);
+    const data = c.getImageData(0, 0, 128, 128).data; let alpha = 0;
     for (let i = 3; i < data.length; i += 4) alpha += data[i];
     return alpha;
   }
 
-  progress() {
-    if (!this.initialDirty) return 0;
-    return Math.min(100, Math.max(0, Math.round((1 - this.dirty / this.initialDirty) * 100)));
-  }
+  progress() { if (!this.initialDirty) return 0; return Math.min(100, Math.max(0, Math.round((1 - this.dirty / this.initialDirty) * 100))); }
 
   quality() {
     const clean = this.progress();
@@ -202,7 +194,7 @@ export class CleaningController {
     const distancePenalty = Math.min(14, Math.max(0, this.stats.distance / 1100 - 1) * 5);
     const wastePenalty = Math.min(24, this.stats.wasted / Math.max(1, this.stats.distance) * 1000);
     const toolPenalty = this.tool.id === this.carpet.idealTool ? 0 : 7;
-    return Math.max(0, Math.min(100, Math.round(100 - strokesPenalty - distancePenalty - wastePenalty - toolPenalty)));
+    return Math.max(0, Math.min(100, Math.round(100 - strokesPenalty - distancePenalty - wastePenalty - toolPenalty));
   }
 
   grade() {
@@ -214,59 +206,31 @@ export class CleaningController {
     return {label:'ROUGH CLEAN',short:'D',stars:1};
   }
 
-  emitStats() {
-    this.onStats({progress:this.progress(),quality:this.quality(),grade:this.grade(),tool:this.tool,stats:{...this.stats}});
-  }
+  emitStats() { this.onStats({progress:this.progress(),quality:this.quality(),grade:this.grade(),tool:this.tool,paused:this.paused,stats:{...this.stats}}); }
 
   drawDirtImage() {
-    const c = this.dirtyCtx;
-    c.clearRect(0, 0, this.w, this.h);
-    const rw = this.w * .39;
-    const rh = Math.min(this.h * .34, rw / this.carpet.ratio);
-    c.save();
-    c.translate(this.w / 2, this.h / 2);
-    c.beginPath();
-    if (this.carpet.shape === 'oval') c.ellipse(0, 0, rw, rh, 0, 0, Math.PI * 2);
-    else c.roundRect(-rw, -rh, rw * 2, rh * 2, Math.min(28, rw * .08));
-    c.clip();
-    c.drawImage(this.dirtImage, -rw, -rh, rw * 2, rh * 2);
-    c.restore();
+    const c = this.dirtyCtx; c.clearRect(0, 0, this.w, this.h);
+    const rw = this.w * .39; const rh = Math.min(this.h * .34, rw / this.carpet.ratio);
+    c.save(); c.translate(this.w / 2, this.h / 2); c.beginPath();
+    if (this.carpet.shape === 'oval') c.ellipse(0, 0, rw, rh, 0, 0, Math.PI * 2); else c.roundRect(-rw, -rh, rw * 2, rh * 2, Math.min(28, rw * .08));
+    c.clip(); c.drawImage(this.dirtImage, -rw, -rh, rw * 2, rh * 2); c.restore();
   }
 
   animate(now) {
     const dt = Math.min(.035, (now - this.lastFrame) / 1000 || .016);
-    this.lastFrame = now;
-    this.updateParticles(dt);
-    this.draw();
-    requestAnimationFrame(this.animate);
+    this.lastFrame = now; this.updateParticles(dt); this.draw(); requestAnimationFrame(this.animate);
   }
 
   draw() {
     if (!this.w || !this.h) return;
-    const c = this.ctx;
-    c.clearRect(0, 0, this.w, this.h);
-    const cx = this.w / 2, cy = this.h / 2;
-    const rw = this.w * .39;
-    const rh = Math.min(this.h * .34, rw / this.carpet.ratio);
-    c.save();
-    c.translate(cx, cy);
-    c.beginPath();
-    if (this.carpet.shape === 'oval') c.ellipse(0, 0, rw, rh, 0, 0, Math.PI * 2);
-    else c.roundRect(-rw, -rh, rw * 2, rh * 2, Math.min(28, rw * .08));
-    c.clip();
-    if (this.rugImage) c.drawImage(this.rugImage, -rw, -rh, rw * 2, rh * 2);
-    c.restore();
+    const c = this.ctx; c.clearRect(0, 0, this.w, this.h);
+    const cx = this.w / 2, cy = this.h / 2; const rw = this.w * .39; const rh = Math.min(this.h * .34, rw / this.carpet.ratio);
+    c.save(); c.translate(cx, cy); c.beginPath();
+    if (this.carpet.shape === 'oval') c.ellipse(0, 0, rw, rh, 0, 0, Math.PI * 2); else c.roundRect(-rw, -rh, rw * 2, rh * 2, Math.min(28, rw * .08));
+    c.clip(); if (this.rugImage) c.drawImage(this.rugImage, -rw, -rh, rw * 2, rh * 2); c.restore();
     if (this.ready) c.drawImage(this.dirtyCanvas, 0, 0, this.w, this.h);
-    for (const p of this.particles) {
-      c.globalAlpha = Math.max(0, p.life / .6);
-      c.fillStyle = '#d4b994';
-      c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
-    }
+    for (const p of this.particles) { c.globalAlpha = Math.max(0, p.life / .6); c.fillStyle = '#d4b994'; c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill(); }
     c.globalAlpha = 1;
-    if (this.active && this.last) {
-      c.strokeStyle = 'rgba(255,255,255,.9)';
-      c.lineWidth = 2;
-      c.beginPath(); c.arc(this.last.x, this.last.y, this.tool.radius, 0, Math.PI * 2); c.stroke();
-    }
+    if (this.active && this.last && !this.paused) { c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 2; c.beginPath(); c.arc(this.last.x, this.last.y, this.tool.radius, 0, Math.PI * 2); c.stroke(); }
   }
 }
